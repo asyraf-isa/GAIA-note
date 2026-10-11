@@ -1,173 +1,67 @@
-# Backend Development Notes
+# Backend Quick Notes
 
-Quick reference for building a FastAPI backend with `uv`, Pydantic, SQLAlchemy, and PostgreSQL.
+Quick reference for a **FastAPI + PostgreSQL + React** recipe app.
 
-## 1. Python Environment with `uv`
-
-Install `uv`:
+## 1. Python Environment (`uv`)
 
 ```bash
 python -m pip install uv
-```
-
-Pin the Python version:
-
-```bash
 uv python pin 3.12.7
-```
-
-Create a virtual environment:
-
-```bash
 uv venv
-```
-
-Install dependencies from `requirements.txt`:
-
-```bash
 uv pip install -r requirements.txt
-```
-
-Or add packages directly:
-
-```bash
+# Or add packages to the project:
 uv add "fastapi[standard]" "uvicorn[standard]"
-```
-
-## 2. Run FastAPI
-
-Start the development server:
-
-```bash
 uv run fastapi dev main.py
 ```
 
-FastAPI's interactive API documentation is available at:
+FastAPI Swagger docs: `http://localhost:8000/docs`
 
-```text
-http://localhost:8000/docs
-```
+## 2. REST API Cheatsheet
 
-## 3. RESTful API Design
-
-Use plural nouns for resource collections. The HTTP method defines the action.
-
-| HTTP method | Endpoint | Purpose |
+| Method | Endpoint | Use |
 |---|---|---|
+| `GET` | `/recipes` | List recipes |
 | `POST` | `/recipes` | Create a recipe |
-| `GET` | `/recipes` | Retrieve recipes |
 | `PUT` | `/recipes/{recipe_id}` | Update a recipe |
 | `DELETE` | `/recipes/{recipe_id}` | Delete a recipe |
 
-## 4. Pydantic Schemas — `schemas.py`
+Use **plural nouns** for resource collections; the HTTP method defines the action.
 
-Schemas validate request data and serialize responses. FastAPI also uses them to generate API documentation.
+## 3. Project Structure
 
-```python
-from typing import Optional
-
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class RecipeBase(BaseModel):
-    title: str = Field(min_length=1, max_length=100)
-    ingredients: str = Field(min_length=1)
-    instructions: str = Field(min_length=10)
-    cooking_time: int = Field(gt=0)
-    image: Optional[str] = Field(default=None, max_length=255)
-
-
-class RecipeOut(RecipeBase):
-    id: int
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class RecipeUpdate(BaseModel):
-    title: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    ingredients: Optional[str] = Field(default=None, min_length=1)
-    instructions: Optional[str] = Field(default=None, min_length=10)
-    cooking_time: Optional[int] = Field(default=None, gt=0)
-    image: Optional[str] = Field(default=None, max_length=255)
-```
-
-## 5. Example API Endpoints — `main.py`
-
-### Create a recipe
-
-```python
-@app.post(
-    "/recipes/",
-    response_model=schemas.RecipeOut,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_recipe(
-    recipe: schemas.RecipeBase,
-    db: AsyncSession = Depends(get_db),
-):
-    new_recipe = Recipe(**recipe.model_dump())
-    db.add(new_recipe)
-    await db.commit()
-    await db.refresh(new_recipe)
-    return new_recipe
-```
-
-### Search recipes by ingredient and maximum cooking time
-
-```python
-@app.get("/recipes/search", response_model=list[schemas.RecipeOut])
-async def search_recipes(
-    ingredient: str,
-    max_cooking_time: int,
-    db: AsyncSession = Depends(get_db),
-):
-    query = select(Recipe).where(
-        Recipe.ingredients.icontains(ingredient, autoescape=True),
-        Recipe.cooking_time <= max_cooking_time,
-    )
-    return (await db.scalars(query)).all()
-```
-
-## 6. Example Project Structure
-
-Separating responsibilities across files makes a project easier to maintain and scale.
-
-| File or directory | Responsibility |
+| File | Responsibility |
 |---|---|
-| `main.py` | Entry point, routes, lifespan logic, and dependency injection |
-| `schemas.py` | Pydantic models for validation and API serialization |
+| `main.py` | API routes and dependency injection |
+| `schemas.py` | Validate requests and shape responses with Pydantic |
 | `models.py` | SQLAlchemy database table definitions |
-| `database.py` | Engine configuration, connection pooling, and session factory |
-| `.environment` | Environment variables and credentials *(as noted in the original notes)* |
-| `requirements.txt` | Package dependencies |
-| `.venv/` | Project-specific virtual environment |
+| `database.py` | Engine, connection pool and session factory |
+| `.env` | Environment variables and credentials |
+| `requirements.txt` | Python dependencies |
+| `.venv/` | Project virtual environment |
 
-## 7. Database Tools
+- **SQLAlchemy** maps Python classes to database tables.
+- **psycopg** lets Python connect to PostgreSQL.
+- **Pydantic** validates API data and helps generate documentation.
 
-**Psycopg** is a Python database adapter that allows an application to connect to PostgreSQL, execute SQL, and work with query results.
+## 4. Database Connection
 
-**SQLAlchemy** is a Python SQL toolkit and Object Relational Mapper (ORM). It lets you work with database records through Python objects while retaining the flexibility of SQL.
+In `.env`:
 
-## 8. Environment Configuration — `.env`
-
-Example PostgreSQL connection string:
-
-```dotenv
+```env
 DATABASE_URL=postgresql+psycopg://postgres:yourpassword@localhost:5432/recipe_db
 ```
 
-## 9. SQLAlchemy Models — `models.py`
+Replace the example credentials with your own; do not commit secrets.
+
+## 5. SQLAlchemy Model (`models.py`)
 
 ```python
 from typing import Optional
-
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-
 class Base(DeclarativeBase):
     pass
-
 
 class Recipe(Base):
     __tablename__ = "recipes"
@@ -180,11 +74,137 @@ class Recipe(Base):
     image: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 ```
 
-## 10. `models.py` vs. `schemas.py`
+## 6. Pydantic Schemas (`schemas.py`)
 
-| Responsibility | `models.py` — SQLAlchemy | `schemas.py` — Pydantic |
-|---|---|---|
-| Works with | PostgreSQL | HTTP clients / API data |
-| Defines | Database table columns | Request and response data shapes |
-| Enforces | Database constraints, such as column types and nullability | Input validation, such as `min_length` and `gt=0` |
-| Typical classes | Database entity or entities | `Base`, response, and update schemas for different use cases |
+```python
+from typing import Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+class RecipeBase(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
+    ingredients: str = Field(min_length=1)
+    instructions: str = Field(min_length=10)
+    cooking_time: int = Field(gt=0)
+    image: Optional[str] = Field(default=None, max_length=255)
+
+class RecipeOut(RecipeBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+class RecipeUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    ingredients: Optional[str] = Field(default=None, min_length=1)
+    instructions: Optional[str] = Field(default=None, min_length=10)
+    cooking_time: Optional[int] = Field(default=None, gt=0)
+    image: Optional[str] = Field(default=None, max_length=255)
+```
+
+**Remember:** `models.py` defines database columns; `schemas.py` defines validated API input/output.
+
+## 7. FastAPI Endpoint Examples (`main.py`)
+
+Create a recipe:
+
+```python
+@app.post("/recipes/", response_model=schemas.RecipeOut, status_code=status.HTTP_201_CREATED)
+async def create_recipe(recipe: schemas.RecipeBase, db: AsyncSession = Depends(get_db)):
+    new_recipe = Recipe(**recipe.model_dump())
+    db.add(new_recipe)
+    await db.commit()
+    await db.refresh(new_recipe)
+    return new_recipe
+```
+
+Search by ingredient and maximum cooking time:
+
+```python
+@app.get("/recipes/search", response_model=list[schemas.RecipeOut])
+async def search_recipes(ingredient: str, max_cooking_time: int, db: AsyncSession = Depends(get_db)):
+    query = select(Recipe).where(
+        Recipe.ingredients.icontains(ingredient, autoescape=True),
+        Recipe.cooking_time <= max_cooking_time,
+    )
+    return (await db.scalars(query)).all()
+```
+
+## 8. Enable CORS (React → FastAPI)
+
+Add middleware **after creating the FastAPI app and before defining routes**. Allow your frontend origin explicitly.
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+Change the origin to match your frontend URL. Avoid `*` for production when credentials are enabled.
+
+## 9. React + Axios
+
+Install:
+
+```bash
+npm install axios
+```
+
+Basic setup and requests:
+
+```jsx
+import axios from 'axios';
+
+const API_URL = 'http://localhost:8000/recipes/';
+
+const fetchRecipes = async () => {
+  const { data } = await axios.get(API_URL);
+  setRecipes(data);
+};
+
+const createRecipe = async (formData) => {
+  await axios.post(API_URL, {
+    ...formData,
+    cooking_time: Number(formData.cooking_time),
+  });
+  await fetchRecipes();
+};
+
+const updateRecipe = async (id, formData) => {
+  await axios.put(`${API_URL}${id}`, {
+    ...formData,
+    cooking_time: Number(formData.cooking_time),
+  });
+  await fetchRecipes();
+};
+
+const deleteRecipe = async (id) => {
+  await axios.delete(`${API_URL}${id}`);
+  await fetchRecipes();
+};
+```
+
+Useful React patterns:
+
+```jsx
+const [recipes, setRecipes] = useState([]);
+const [error, setError] = useState(null);
+const [editingId, setEditingId] = useState(null);
+
+useEffect(() => {
+  fetchRecipes().catch(() => setError('Failed to load recipes.'));
+}, []);
+
+const handleChange = (e) => {
+  setFormData({ ...formData, [e.target.name]: e.target.value });
+};
+```
+
+- Use `useEffect` to load data when the component mounts.
+- Convert numeric form values, such as `cooking_time`, with `Number(...)` before sending.
+- Catch request errors and show a useful message in the UI.
+- Use `editingId` to track which recipe is being edited; confirm before deleting.
